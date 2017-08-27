@@ -6,7 +6,7 @@ lazy val commonSettings = Seq(
   version := "0.1.0-SNAPSHOT"
 )
 
-lazy val internal = (project in file("internal"))
+lazy val core = (project in file("core"))
   .settings(commonSettings)
   .settings(
 
