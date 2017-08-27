@@ -22,10 +22,3 @@ lazy val internal = (project in file("internal"))
       scalaTest % Test
     )
   )
-
-//todo delete this, this does not need to be multi-project
-lazy val core = (project in file("core"))
-  .settings(commonSettings)
-  .settings(
-    libraryDependencies += scalaTest % Test
-  ).dependsOn(internal)
