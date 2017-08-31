@@ -2,10 +2,83 @@ package hold.my.beer.macros
 
 import hold.my.beer.codegen.Codegen
 
+import better.files._
+
 import scala.language.experimental.macros
 import scala.reflect.macros._
 
 object Internal {
+
+  sealed trait Action
+  case object NoOp extends Action
+  case object InitVersion1 extends Action
+  case class UpdateVersion(v: Int) extends Action
+
+  def versionPkg(c: blackbox.Context): String = {
+    import c.universe._
+    var current = c.internal.enclosingOwner
+    var pkg = List(Codegen.VERSION_PKG)
+    while(current != NoSymbol && current.toString != "package <root>") {
+      if(current.isPackage) {
+        pkg = current.name.decodedName.toString :: pkg
+      }
+      current = current.owner
+    }
+    pkg.mkString(".")
+  }
+
+  def logic[T: c.WeakTypeTag](c: blackbox.Context)(namespace: c.Expr[String]): Action = {
+    import c.universe._
+    //println(s"? ${c.enclosingPosition.source.path.toFile.parent}")
+    //c.enclosingPosition.source.file
+
+    println("ARGH?")
+    def fields(t: c.universe.Symbol): List[c.universe.Symbol] = {
+      t.info.decls.sorted.filter(x => x.isPublic && !x.isSynthetic && !x.isConstructor)
+    }
+
+    //val targetTpe = c.weakTypeTag[T].tpe
+    val targetTpe = c.weakTypeOf[T]
+
+    println(targetTpe.decls)
+    val ns = namespace match {
+      case Expr(Literal(Constant(x : String))) => x
+      case _ =>
+        c.abort(c.enclosingPosition, "Namespace must be a constant string literal")
+        ""
+    }
+
+    val namespacedPkg = s"${versionPkg(c)}.$ns"
+    val bleh = scala.util.Try {
+      c.mirror.staticPackage(namespacedPkg)
+    }
+    if(bleh.isFailure) {
+      return InitVersion1
+    }
+    println("[[[[[[[[[[[[[[[[[[[[[[[[[[[")
+    val name = targetTpe.typeSymbol.asType.name.decodedName.toString
+    val vCurrent = bleh.get.asModule.info.members.filter(_.isModule).filter(_.name == TermName(s"V1"))
+    val vCurrentClass = vCurrent.head.info.members.filter(_.isClass).head
+    val srcFields = fields(targetTpe.typeSymbol)
+    val omg = fields(vCurrentClass)
+
+    println("...............................")
+    println(srcFields)
+    println(omg.map(_.asTerm.info.termSymbol))
+    println(srcFields.map(_.asTerm) == omg.map(_.asTerm))
+    //println(targetTpe.decls.sorted.filter(x => x.isPublic && !x.isSynthetic))
+    NoOp
+  }
+
+  def testLogic[T: c.WeakTypeTag](c: blackbox.Context)(namespace: c.Expr[String]): c.Expr[Action] = {
+    import c.universe._
+    val result = logic[T](c)(namespace) match {
+      case NoOp => q"hold.my.beer.macros.Internal.NoOp"
+      case InitVersion1 => q"hold.my.beer.macros.Internal.InitVersion1"
+      case UpdateVersion(x) => q"hold.my.beer.macros.Internal.UpdateVersion($x)"
+    }
+    c.Expr[Action](result)
+  }
 
   //Rules:
   //@Version(N) and _VN exists, and all fields and types line up, and definitions for all previous versions exist => OK!
@@ -64,5 +137,6 @@ object Internal {
 }
 
 object Todo {
+  def test[T](namespace: String): Internal.Action = macro Internal.testLogic[T]
   def generate(pkg: String): String = macro Internal.generate
 }

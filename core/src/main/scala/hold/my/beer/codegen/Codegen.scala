@@ -7,6 +7,8 @@ import scala.meta._
 
 object Codegen {
 
+  val VERSION_PKG = "versions"
+
   def versionName(term: String, version: Int): String = s"_${term}__V$version"
 
   val version = """_(\w+)__V(\d+)""".r
@@ -18,14 +20,14 @@ object Codegen {
   }
 
   //Returns an error string if failed, None if success
-  def initialize(src: String, prefix: sourcecode.Pkg, namespace: List[String]): Option[String] = {
+  //def initialize(src: String, prefix: sourcecode.Pkg, namespace: List[String]): Option[String] = {
+  def initialize(src: String, prefixPkg: String, namespace: List[String]): Option[String] = {
     //Create a versions directory in parent folder
     val dir = src.toFile.parent
 
-    val suffix = "versions" :: namespace
+    val suffix = VERSION_PKG :: namespace
 
-    val init = s"""package ${prefix.value}.${suffix.mkString(".")}
-               """.stripMargin
+    val init = s"package $prefixPkg.${suffix.mkString(".")}"
 
     //Init version package dir structure
     val initDirs = dir / suffix.mkString("/")

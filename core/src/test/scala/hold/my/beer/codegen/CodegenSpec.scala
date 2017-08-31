@@ -18,7 +18,7 @@ class CodegenSpec extends FlatSpec with Matchers with BeforeAndAfter {
 
   "Codegen" should "be able to initialize a new version package" in {
     val errs = Codegen.initialize(sample.Person.location.value,
-                                  sample.Person.pkg,
+                                  sample.Person.pkg.value,
                                   namespace)
     val initialized = sampleVersionDir / "person"
     initialized.exists shouldBe true
@@ -29,7 +29,7 @@ class CodegenSpec extends FlatSpec with Matchers with BeforeAndAfter {
     val person = sample.Person.location.value.toFile
 
     val errInit =
-      Codegen.initialize(sample.Person.location.value, sample.Person.pkg, namespace)
+      Codegen.initialize(sample.Person.location.value, sample.Person.pkg.value, namespace)
 
     val generated = sampleVersionDir / "person" / "Generated.scala"
 
