@@ -108,14 +108,14 @@ object Internal {
       return InitVersion1
     }
 
-    //todo check name change
-    val name = targetTpe.typeSymbol.asType.name.decodedName.toString
-
     val vCurrent =
-      versionsPkg.get.asModule.info.members.filter(_.isModule).filter(_.name == TermName(s"V${info.currentVersion}"))
-    val vCurrentClass = vCurrent.headOption.map(_.info.members.filter(_.isClass).map(_.asClass.toType).head)
+      versionsPkg.get.asModule.info.members
+        .filter(_.isModule)
+        .filter(_.name == TermName(s"V${info.currentVersion}"))
+    val vCurrentClass =
+      vCurrent.headOption.map(_.info.members.filter(_.isClass).map(_.asClass.toType).head)
 
-    if(vCurrentClass.isEmpty) {
+    if (vCurrentClass.isEmpty) {
       //No entry for the next version
       return UpdateVersion(info.currentVersion)
     }
@@ -130,7 +130,10 @@ object Internal {
     val verCmp =
       versionFields.map(x => FieldCompare(x.name.decodedName, x.typeSignature.finalResultType))
 
-    if (srcCmp != verCmp) UpdateVersion(info.currentVersion)
+    val srcName     = targetTpe.typeSymbol.asType.name.decodedName.toString + s"_V${info.currentVersion}"
+    val versionName = vCurrentClass.head.typeSymbol.asType.name.decodedName.toString
+
+    if (srcCmp != verCmp || srcName != versionName) UpdateVersion(info.currentVersion)
     else NoOp
   }
 

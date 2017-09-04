@@ -1,7 +1,6 @@
 package hold.my.beer.macros
 
 import hold.my.beer.macros.sample._
-import hold.my.beer.testing.Tags.Nick
 import org.scalatest.{BeforeAndAfter, FlatSpec, Matchers}
 
 class MacroSpec extends FlatSpec with Matchers with BeforeAndAfter {
@@ -24,5 +23,9 @@ class MacroSpec extends FlatSpec with Matchers with BeforeAndAfter {
 
   "macros" should "detect UpdateVersion(2) if v2 exists and has been modified" in {
     SampleV2Modified._test shouldBe Internal.UpdateVersion(2)
+  }
+
+  "macros" should "detect UpdateVersion(1) if the target is renamed" in {
+    NameChange._test shouldBe Internal.UpdateVersion(1)
   }
 }
