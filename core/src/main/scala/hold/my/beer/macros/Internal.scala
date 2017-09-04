@@ -51,7 +51,22 @@ object Internal {
         c.abort(c.enclosingPosition, "Namespace must be a constant string literal")
         ""
     }
-    VersionInfo(src, name, getPkg(c), ns.split('.').toList, 1)
+
+    val v = target.typeSymbol.annotations.filter(_.tree.tpe =:= typeOf[hold.my.beer.Version]).map {
+      _.tree match {
+        case Apply(_, List(Literal(Constant(v: Int)))) => v
+        case _ =>
+          c.abort(c.enclosingPosition, "Invalid value for Version! Must be a number literal!")
+      }
+    }
+
+    if (v.length != 1) {
+      c.abort(
+        c.enclosingPosition,
+        s"Target version type ${target.typeSymbol.fullName} must have an @Version annotation!")
+    }
+
+    VersionInfo(src, name, getPkg(c), ns.split('.').toList, v.head)
   }
 
   def companionTermFilter[T: c.WeakTypeTag](c: blackbox.Context): List[String] = {
@@ -60,15 +75,18 @@ object Internal {
     val companionFields = target.companion.typeSymbol.asClass.info.decls.filter(x =>
       x.isPublic && !x.isSynthetic && !x.isConstructor)
 
-    val filtered = companionFields.map { f =>
-      (f, scala.util.Try(f.typeSignature.finalResultType))
-    }.collect {
-      //Remove cyclic reference terms (this macro without a type annotation)
-      case (f, scala.util.Failure(_ : scala.reflect.internal.Symbols#CyclicReference)) =>
-        f.asTerm.name.decodedName.toString
-      case (f, scala.util.Success(t)) if t =:= typeOf[Generated] =>
-        f.asTerm.name.decodedName.toString
-    }.toList
+    val filtered = companionFields
+      .map { f =>
+        (f, scala.util.Try(f.typeSignature.finalResultType))
+      }
+      .collect {
+        //Remove cyclic reference terms (this macro without a type annotation)
+        case (f, scala.util.Failure(_: scala.reflect.internal.Symbols#CyclicReference)) =>
+          f.asTerm.name.decodedName.toString
+        case (f, scala.util.Success(t)) if t =:= typeOf[Generated] =>
+          f.asTerm.name.decodedName.toString
+      }
+      .toList
 
     filtered
   }
@@ -94,10 +112,16 @@ object Internal {
     val name = targetTpe.typeSymbol.asType.name.decodedName.toString
 
     val vCurrent =
-      versionsPkg.get.asModule.info.members.filter(_.isModule).filter(_.name == TermName(s"V1"))
-    val vCurrentClass = vCurrent.head.info.members.filter(_.isClass).map(_.asClass.toType).head
+      versionsPkg.get.asModule.info.members.filter(_.isModule).filter(_.name == TermName(s"V${info.currentVersion}"))
+    val vCurrentClass = vCurrent.headOption.map(_.info.members.filter(_.isClass).map(_.asClass.toType).head)
+
+    if(vCurrentClass.isEmpty) {
+      //No entry for the next version
+      return UpdateVersion(info.currentVersion)
+    }
+
     val srcFields     = targetTpe.typeSymbol.info.decls.sorted.filter(fields)
-    val versionFields = vCurrentClass.etaExpand.typeSymbol.info.decls.sorted.filter(fields)
+    val versionFields = vCurrentClass.head.etaExpand.typeSymbol.info.decls.sorted.filter(fields)
 
     case class FieldCompare(name: c.universe.Name, typ: c.universe.Type)
 
@@ -106,7 +130,7 @@ object Internal {
     val verCmp =
       versionFields.map(x => FieldCompare(x.name.decodedName, x.typeSignature.finalResultType))
 
-    if (srcCmp != verCmp) UpdateVersion(1)
+    if (srcCmp != verCmp) UpdateVersion(info.currentVersion)
     else NoOp
   }
 
@@ -122,11 +146,12 @@ object Internal {
     c.Expr[Action](result)
   }
 
-  def generate[T: c.WeakTypeTag](c: blackbox.Context)(namespace: c.Expr[String]): c.Expr[Generated] = {
+  def generate[T: c.WeakTypeTag](c: blackbox.Context)(
+      namespace: c.Expr[String]): c.Expr[Generated] = {
     import c.universe._
     val i = info[T](c)(namespace)
     logic[T](c)(i) match {
-      case NoOp         => ()
+      case NoOp => ()
       case InitVersion1 =>
         Codegen.initialize(i.src.pathAsString, s"${i.srcPkg.mkString(".")}", i.namespace).foreach {
           err =>
@@ -136,13 +161,11 @@ object Internal {
         Codegen.codegen(i.src, i.generatedFile, i.target, 1, filter).foreach { err =>
           c.abort(c.enclosingPosition, s"Codegen init version 1 failed!: $err")
         }
-        ()
       case UpdateVersion(v) =>
         val filter = companionTermFilter[T](c)
         Codegen.codegen(i.src, i.generatedFile, i.target, v, filter).foreach { err =>
           c.abort(c.enclosingPosition, s"Codegen failed!: $err")
         }
-        ()
     }
     c.Expr[Generated](q"new _root_.hold.my.beer.macros.Internal.Generated")
   }
