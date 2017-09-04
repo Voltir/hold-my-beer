@@ -28,4 +28,8 @@ class MacroSpec extends FlatSpec with Matchers with BeforeAndAfter {
   "macros" should "detect UpdateVersion(1) if the target is renamed" in {
     NameChange._test shouldBe Internal.UpdateVersion(1)
   }
+
+  "macros" should "error if there is an unexpected version" in {
+    InvalidVersion._test shouldBe Internal.UnexpectedVersion
+  }
 }

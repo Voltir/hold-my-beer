@@ -12,6 +12,7 @@ object Internal {
   case object NoOp                 extends Action
   case object InitVersion1         extends Action
   case class UpdateVersion(v: Int) extends Action
+  case object UnexpectedVersion    extends Action
 
   sealed class Generated {}
 
@@ -104,13 +105,31 @@ object Internal {
       c.mirror.staticPackage(info.generatedPkg)
     }
 
-    if (versionsPkg.isFailure) {
-      return InitVersion1
+    if (versionsPkg.isFailure && info.currentVersion == 1) {
+      if (info.currentVersion == 1) return InitVersion1
+      else return UnexpectedVersion
     }
 
+    val versionModules = versionsPkg.get.asModule.info.members.filter(_.isModule)
+
+    //Verify versions in version file are contiguous from 1
+    def isVersionObject(x: c.universe.Symbol): Boolean = {
+      val name = x.name.decodedName.toString
+      name.charAt(0) == 'V' && scala.util.Try(name.drop(1).toInt).isSuccess
+    }
+
+    val vvv = versionModules.collect {
+      case x if isVersionObject(x) => x.name.decodedName.toString.drop(1).toInt
+    }.toSet
+
+    val expected = (vvv + info.currentVersion) == (1 to info.currentVersion).toSet
+    if (!expected) {
+      return UnexpectedVersion
+    }
+
+    //Determine if the latest version and current src match
     val vCurrent =
-      versionsPkg.get.asModule.info.members
-        .filter(_.isModule)
+      versionModules
         .filter(_.name == TermName(s"V${info.currentVersion}"))
     val vCurrentClass =
       vCurrent.headOption.map(_.info.members.filter(_.isClass).map(_.asClass.toType).head)
@@ -142,9 +161,10 @@ object Internal {
     import c.universe._
     val targetInfo = info[T](c)(namespace)
     val result = logic[T](c)(targetInfo) match {
-      case NoOp             => q"_root_.hold.my.beer.macros.Internal.NoOp"
-      case InitVersion1     => q"_root_.hold.my.beer.macros.Internal.InitVersion1"
-      case UpdateVersion(x) => q"_root_.hold.my.beer.macros.Internal.UpdateVersion($x)"
+      case NoOp              => q"_root_.hold.my.beer.macros.Internal.NoOp"
+      case InitVersion1      => q"_root_.hold.my.beer.macros.Internal.InitVersion1"
+      case UpdateVersion(x)  => q"_root_.hold.my.beer.macros.Internal.UpdateVersion($x)"
+      case UnexpectedVersion => q"_root_.hold.my.beer.macros.Internal.UnexpectedVersion"
     }
     c.Expr[Action](result)
   }
@@ -169,6 +189,8 @@ object Internal {
         Codegen.codegen(i.src, i.generatedFile, i.target, v, filter).foreach { err =>
           c.abort(c.enclosingPosition, s"Codegen failed!: $err")
         }
+      case UnexpectedVersion =>
+        c.abort(c.enclosingPosition, "todo")
     }
     c.Expr[Generated](q"new _root_.hold.my.beer.macros.Internal.Generated")
   }
