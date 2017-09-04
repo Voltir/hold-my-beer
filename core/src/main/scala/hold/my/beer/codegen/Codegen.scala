@@ -48,10 +48,14 @@ object Codegen {
   }
 
   //Returns an error string if failed, None if success
-  def codegen(src: File, versions: File, target: String, version: Int): Option[String] = {
+  def codegen(src: File,
+              versions: File,
+              target: String,
+              version: Int,
+              companionTermFilter: List[String] = Nil): Option[String] = {
     (src.toJava.parse[Source], versions.toJava.parse[Source]) match {
       case (Parsed.Success(s), Parsed.Success(v)) =>
-        process(target, s, v, version) match {
+        process(target, s, v, version, companionTermFilter) match {
           case Right(neat) =>
             versions.overwrite(neat.syntax)
             None
@@ -76,7 +80,10 @@ object Codegen {
     pkg.head.copy(stats = neat)
   }
 
-  private def generateNextVersion(src: Source, target: String, version: Int): Defn.Object = {
+  private def generateNextVersion(src: Source,
+                                  target: String,
+                                  version: Int,
+                                  companionTermFilter: List[String]): Defn.Object = {
     val renamed = s"${target}_V$version"
 
     def renameTargetType(s: Stat): Stat = {
@@ -84,6 +91,20 @@ object Codegen {
           case Type.Name(`target`) => Type.Name(renamed)
         }
         .asInstanceOf[Stat]
+    }
+
+    def companionFilter(s: Stat): Boolean = {
+      s match {
+        case q"..$mods val $x = $_" =>
+          val n = x.asInstanceOf[Pat.Var.Term].name.value
+          !companionTermFilter.contains(n)
+        case q"..$mods val $x: $_ = $_" =>
+          val n = x.asInstanceOf[Pat.Var.Term].name.value
+          !companionTermFilter.contains(n)
+        case _ =>
+          scala.meta.abort(s"Cannot determine if this field should be kept!: ${s.syntax}")
+          true
+      }
     }
 
     val imports = src.collect {
@@ -100,7 +121,7 @@ object Codegen {
     val companion = src.collect {
       case q"..$mods object $adt { ..$defs }" if adt.value == target =>
         val versionName = Term.Name(renamed)
-        val rewrite     = defs.map(renameTargetType)
+        val rewrite     = defs.filter(companionFilter).map(renameTargetType)
         q"..$mods object $versionName { ..$rewrite }"
     }
 
@@ -116,8 +137,9 @@ object Codegen {
   private def process(target: String,
                       src: Source,
                       versions: Source,
-                      version: Int): Either[String, Pkg] = {
-    val next    = generateNextVersion(src, target, version)
+                      version: Int,
+                      companionTermFilter: List[String]): Either[String, Pkg] = {
+    val next    = generateNextVersion(src, target, version, companionTermFilter)
     val current = removeCurrentInstance(version, versions)
     Right(current.copy(stats = current.stats ++ List(next)))
   }
